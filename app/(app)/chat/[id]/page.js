@@ -48,10 +48,10 @@ export default function Chat() {
     const body = text.trim();
     if (!body || !me) return;
     setText('');
-    const optimistic = { id: `tmp-${Date.now()}`, sender_id: me.id, body, created_at: new Date().toISOString() };
-    setMsgs((m) => [...m, optimistic]);
+    // No optimistic add: the realtime subscription delivers this message back
+    // (to the sender too) and adds it once — avoids the message appearing twice.
     const { error } = await supabase.from('messages').insert({ match_id: matchId, sender_id: me.id, body });
-    if (error) setMsgs((m) => m.filter((x) => x.id !== optimistic.id));
+    if (error) setText(body); // restore the text if the send failed
   }
 
   return (
