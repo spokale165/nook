@@ -2,34 +2,54 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-const TABS = [
-  { href: '/discover', label: 'Discover', icon: 'M12 3l9 8h-2v9h-5v-6H10v6H5v-9H3z' },
-  { href: '/matches', label: 'Matches', icon: 'M12 20s-7-4.3-9.3-8.6C1.1 8.2 2.7 5 6 5c1.9 0 3.2 1 3.9 2M12 20s7-4.3 9.3-8.6C22.9 8.2 21.3 5 18 5c-1.9 0-3.2 1-3.9 2' },
-  { href: '/profile', label: 'Profile', icon: null },
-];
+import { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
 export default function TabBar() {
+  const supabase = createClient();
   const path = usePathname();
-  return (
-    <nav className="tabbar">
-      {TABS.map((t) => {
-        const on = path.startsWith(t.href);
-        return (
-          <Link key={t.href} href={t.href} className={`tab ${on ? 'on' : ''}`}>
-            {t.label === 'Profile' ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d={t.icon} />
-              </svg>
-            )}
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
+  const [unread, setUnread] = useState(0);
+
+  // Count matches that are new or have unseen incoming messages.
+  async function computeUnread() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data: matches } = await supabase.from('matches')
+      .select('id').or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
+    if (!matches || matches.length === 0) { setUnread(0); return; }
+
+    const { data: reads } = await supabase.from('match_reads')
+      .select('match_id, last_read_at').eq('user_id', user.id);
+    const readMap = new Map((reads || []).map((r) => [r.match_id, r.last_read_at]));
+
+    let count = 0;
+    for (const m of matches) {
+      const lastRead = readMap.get(m.id);
+      if (!lastRead) { count += 1; continue; }            // never opened this match
+      const { data: newer } = await supabase.from('messages')
+        .select('id').eq('match_id', m.id)
+        .neq('sender_id', user.id).gt('created_at', lastRead).limit(1);
+      if (newer && newer.length) count += 1;              // unseen message from them
+    }
+    setUnread(count);
+  }
+
+  // Live updates: a new match or message anywhere refreshes the badge.
+  useEffect(() => {
+    let channel;
+    computeUnread();
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      channel = supabase.channel('tabbar')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, computeUnread)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'matches' }, computeUnread)
+        .subscribe();
+    })();
+    return () => { if (channel) supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recompute on navigation (e.g. after opening a chat clears its unread).
+  useEffect(() => { computeUnread(); /*
