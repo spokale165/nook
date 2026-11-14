@@ -52,4 +52,24 @@ export default function TabBar() {
   }, []);
 
   // Recompute on navigation (e.g. after opening a chat clears its unread).
-  useEffect(() => { computeUnread(); /*
+  useEffect(() => { computeUnread(); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+
+  return (
+    <nav className="tabbar">
+      <Link href="/discover" className={path === '/discover' ? 'active' : ''}>
+        <div className="icon">🔍</div>
+        <div className="label">Discover</div>
+      </Link>
+      <Link href="/matches" className={path === '/matches' ? 'active' : ''}>
+        <div className="icon">💬{unread > 0 && <span className="badge">{unread}</span>}</div>
+        <div className="label">Matches</div>
+      </Link>
+      <Link href="/profile" className={path === '/profile' ? 'active' : ''}>
+        <div className="icon">👤</div>
+        <div className="label">Profile</div>
+      </Link>
+    </nav>
+  );
+}
