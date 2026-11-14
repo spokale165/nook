@@ -4,7 +4,7 @@ import TabBar from '@/components/TabBar';
 
 // Shared shell for the signed-in app: guards auth + onboarding, shows tabs.
 export default async function AppLayout({ children }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 

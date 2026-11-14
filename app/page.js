@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 
 // Landing page. If already signed in, skip straight into the app.
 export default async function Home() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (user) {
