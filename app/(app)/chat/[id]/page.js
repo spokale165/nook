@@ -18,6 +18,12 @@ export default function Chat() {
   useEffect(() => { init(); /* eslint-disable-next-line */ }, [matchId]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs]);
 
+  // Record that this user has now seen this match (clears the unread badge).
+  async function markRead(uid) {
+    await supabase.from('match_reads')
+      .upsert({ match_id: matchId, user_id: uid, last_read_at: new Date().toISOString() });
+  }
+
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
     setMe(user);
@@ -32,12 +38,16 @@ export default function Chat() {
     const { data: history } = await supabase.from('messages')
       .select('*').eq('match_id', matchId).order('created_at', { ascending: true });
     setMsgs(history || []);
+    markRead(user.id);
 
     // Live updates — new messages stream in without a refresh.
     const channel = supabase.channel(`chat:${matchId}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `match_id=eq.${matchId}` },
-        (payload) => setMsgs((m) => (m.some((x) => x.id === payload.new.id) ? m : [...m, payload.new]))
+        (payload) => {
+          setMsgs((m) => (m.some((x) => x.id === payload.new.id) ? m : [...m, payload.new]));
+          if (payload.new.sender_id !== user.id) markRead(user.id); // seen while viewing
+        }
       ).subscribe();
 
     return () => supabase.removeChannel(channel);
