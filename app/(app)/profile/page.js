@@ -13,6 +13,7 @@ export default function Profile() {
   const router = useRouter();
   const [p, setP] = useState(null);
   const [photos, setPhotos] = useState([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
@@ -20,11 +21,17 @@ export default function Profile() {
     const { data: { user } } = await supabase.auth.getUser();
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     setP(data);
-    if (data?.intent === 'has_place') {
-      const { data: ph } = await supabase.from('listing_photos')
-        .select('url, sort').eq('profile_id', user.id).order('sort');
-      setPhotos(ph || []);
-    }
+    const { data: ph } = await supabase.from('listing_photos')
+      .select('url, sort').eq('profile_id', user.id).order('sort');
+    setPhotos(ph || []);
+  }
+
+  async function switchMode(intent) {
+    if (!p || p.intent === intent || saving) return;
+    setSaving(true);
+    const { error } = await supabase.from('profiles').update({ intent }).eq('id', p.id);
+    setSaving(false);
+    if (!error) setP((s) => ({ ...s, intent }));
   }
 
   async function signOut() {
@@ -40,6 +47,8 @@ export default function Profile() {
     </>
   );
 
+  const needsRoomDetails = p.intent === 'has_place' && photos.length === 0;
+
   return (
     <>
       <div className="topbar"><div className="wordmark">Nook<span className="dot" /></div><div className="sub">You</div></div>
@@ -47,12 +56,27 @@ export default function Profile() {
         <div className="prof-top">
           <div className="av" style={{ background: grad(p.avatar_color) }}>{initials(p.name)}</div>
           <h3>{p.name}, {p.age}</h3>
-          <span className="pill">{p.intent === 'has_place' ? '🛏 Has a room' : '🤝 Looking to team up'}</span>
           <p>📍 {(p.areas || []).join(' · ')} · 💸 ₹{(p.budget || 0).toLocaleString('en-IN')}{p.intent === 'has_place' ? '/mo rent' : ' budget'}<br />
             {p.org_type === 'study' ? '🎓' : '💼'} {p.org || '—'}</p>
         </div>
 
-        {photos.length > 0 && (
+        <div className="card-box">
+          <h4>I&apos;m currently…</h4>
+          <div className="seg">
+            <button className={p.intent === 'has_place' ? 'on' : ''} onClick={() => switchMode('has_place')} disabled={saving}>🛏 Offering a room</button>
+            <button className={p.intent === 'seeking_together' ? 'on' : ''} onClick={() => switchMode('seeking_together')} disabled={saving}>🤝 Looking to team up</button>
+          </div>
+          <p style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 10 }}>
+            This decides which pool you show up in. You can switch whenever your situation changes.
+          </p>
+          {needsRoomDetails && (
+            <p style={{ fontSize: 13, color: 'var(--brand-ink)', fontWeight: 600, marginTop: 8 }}>
+              ⚠ Add room photos so your listing looks complete — tap “Edit profile” below.
+            </p>
+          )}
+        </div>
+
+        {photos.length > 0 && p.intent === 'has_place' && (
           <div className="card-box"><h4>Your room photos</h4>
             <div className="thumbs">{photos.map((ph, i) => <img key={i} className="thumb" src={ph.url} alt="" />)}</div>
           </div>
